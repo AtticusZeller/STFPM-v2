@@ -123,7 +123,7 @@ All notable changes to this project will be documented in this file.
 - Rename model class
 - Rename attr and format
 - Add Fashion MNIST config
-- Rename src/package into ailab
+- Rename src/package into expt
 - Add abc function
 - Remove transform type
 - Update dev config
