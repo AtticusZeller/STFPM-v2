@@ -5,8 +5,7 @@ from timm.data.config import resolve_data_config
 from timm.data.transforms_factory import create_transform
 from torch import nn
 from torch.utils.data import DataLoader
-
-from ailab.data.dataset import DataModule
+from torchvision.datasets import VisionDataset  # type: ignore[import-untyped]
 
 
 def create_rich_progress_bar() -> RichProgressBar:
@@ -28,10 +27,7 @@ def create_rich_progress_bar() -> RichProgressBar:
     )
 
 
-def mean_std(data_module: DataModule) -> tuple[float, float]:
-    dataset = data_module.data(
-        data_module.data_dir, train=True, transform=data_module.transform
-    )
+def mean_std(dataset: VisionDataset) -> tuple[float, float]:
     loader = DataLoader(dataset, batch_size=len(dataset), pin_memory=True)
 
     data = next(iter(loader))[0]
