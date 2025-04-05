@@ -59,6 +59,9 @@ exclude = ["venv", ".venv", "data"] # ignore dataset preprocessing type checking
 # --strict-config= any warnings about configuration are treated as errors
 # --strict-markers= treat unregistered markers as errors
 addopts        = "-rXs --strict-config --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]
 xfail_strict   = true                                    # Treat tests that are marked as xfail but pass as test failures
 filterwarnings = ["error"]                               # Treat all warnings as errors
 pythonpath     = "src/"

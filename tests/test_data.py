@@ -1,84 +1,152 @@
+import math
+from pathlib import Path
+
+import pytest
 import torch
-from torch.utils.data import DataLoader
-from torchvision.transforms import v2 as v2
+from PIL import Image
+from torchvision.transforms import v2
 
-from expt.data import create_data_module
-from expt.data.dataset import MNIST
-from expt.data.transform import reshape_image
+from expt.data.dataset import AssetType, DataModule, InsPLADDataset
 
 
-def test_dataset() -> None:
-    train_dataset = MNIST(
-        root="./data", train=True, download=True, transform=reshape_image
+@pytest.fixture
+def dataset_dir() -> Path:
+    """Path to the dataset directory."""
+    return Path(__file__).parents[1] / "datasets"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("asset_type", list(AssetType))
+def test_insplad_dataset_train(dataset_dir: Path, asset_type: AssetType) -> None:
+    """Test the InsPLAD dataset with training data for all asset types."""
+    # Arrange
+    dataset = InsPLADDataset(root=dataset_dir, asset_type=asset_type, train=True)
+
+    # Act & Assert
+    assert len(dataset) > 0
+
+    assert dataset.asset_type == asset_type
+
+    assert dataset.classes == ["good"]
+    assert dataset.class_to_idx == {"good": 0}
+
+    # __getitem__
+    for img, label in dataset:
+        assert isinstance(img, Image.Image)
+        assert label == 0  # All train samples should be normal
+
+    # Check that all sample paths are from 'good' directory
+    for path in dataset._image_paths:
+        assert "good" in str(path)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("asset_type", list(AssetType))
+def test_insplad_dataset_test(dataset_dir: Path, asset_type: AssetType) -> None:
+    """Test the InsPLAD dataset with test data for all asset types."""
+    # Arrange
+    dataset = InsPLADDataset(root=dataset_dir, asset_type=asset_type, train=False)
+
+    # Act & Assert
+    assert len(dataset.classes) > 0
+
+    assert "good" in dataset.classes
+    assert dataset.class_to_idx["good"] == 0
+
+    # Verify any anomaly classes have index 1
+    for _cls, idx in dataset.class_to_idx.items():
+        if _cls != "good":
+            assert idx == 1
+
+    # __getitem__
+    for i, (img, label) in enumerate(dataset):
+        assert isinstance(img, Image.Image)
+        # Check that all sample paths are from 'good' or anomaly directories
+        if "good" in str(dataset._image_paths[i]):
+            assert label == 0
+        else:
+            assert label == 1
+
+
+@pytest.mark.parametrize("asset_type", list(AssetType))
+def test_transform_correctly_applied(dataset_dir: Path, asset_type: AssetType) -> None:
+    """Test that transforms are correctly applied to dataset images."""
+    # Arrange
+    dataset = InsPLADDataset(root=dataset_dir, asset_type=asset_type, train=False)
+
+    # Create a simple transform to tensor
+    to_tensor = v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)])
+
+    dataset = InsPLADDataset(
+        root=dataset_dir, asset_type=asset_type, train=True, transform=to_tensor
     )
 
-    test_dataset = MNIST(
-        root="./data", train=False, download=True, transform=reshape_image
+    # Act
+    img, _ = dataset[0]
+
+    # Assert
+    assert torch.is_tensor(img)
+    assert img.dtype == torch.float32
+    assert img.min() >= 0.0
+    assert img.max() <= 1.0
+    assert len(img.shape) == 3  # [H, W, C] or [C, H, W]
+
+
+@pytest.mark.parametrize("asset_type", list(AssetType))
+def test_data_module_setup(dataset_dir: Path, asset_type: AssetType) -> None:
+    """Test DataModule correctly splits training data."""
+    # Arrange
+    data_module = DataModule(
+        data_dir=dataset_dir, asset_type=asset_type, batch_size=32, val_split=0.2
     )
-    train_img = train_dataset[1][0]
-    test_img = test_dataset[1][0]
 
-    assert torch.is_tensor(train_img)
-    assert torch.is_tensor(test_img)
-    assert len(train_dataset) == 60000
-    assert len(test_dataset) == 10000
-    assert train_img.shape == (1, 28, 28)
-    assert test_img.shape == (1, 28, 28)
+    # Act
+    data_module.setup("fit")
+
+    # Assert - check correct train/val split
+    total_samples = len(data_module.train_dataset) + len(data_module.val_dataset)
+    expected_train_size = int(total_samples * 0.8)
+    expected_val_size = total_samples - expected_train_size
+
+    assert math.isclose(
+        len(data_module.train_dataset), expected_train_size, abs_tol=1, rel_tol=0
+    )
+    assert math.isclose(
+        len(data_module.val_dataset), expected_val_size, abs_tol=1, rel_tol=0
+    )
 
 
-def test_DataModule():
-    data_module = create_data_module(batch_size=32, transform="base")
-    data_module.prepare_data()
+@pytest.mark.parametrize("asset_type", list(AssetType))
+def test_data_module_loaders(dataset_dir: Path, asset_type: AssetType) -> None:
+    """Test DataModule dataloaders return correctly formatted batches."""
+    # Arrange
+    batch_size = 32
+    data_module = DataModule(
+        data_dir=dataset_dir,
+        asset_type=asset_type,
+        batch_size=batch_size,
+        val_split=0.2,
+    )
+
+    # Setup both fit and test stages
     data_module.setup("fit")
     data_module.setup("test")
+
     train_loader = data_module.train_dataloader()
-    val_loader = data_module.val_dataloader()
     test_loader = data_module.test_dataloader()
+    val_loader = data_module.val_dataloader()
 
-    # Verify train loader properties and data
-    assert isinstance(train_loader, DataLoader)
-    assert len(train_loader.dataset) == 55000
-    for batch in train_loader:
-        images, labels = batch
-        assert images.shape[0] == min(32, len(images))
-        assert images.shape[1:] == (1, 28, 28)
-        assert images.dtype == torch.float32
-        assert labels.shape[0] == min(32, len(labels))
-        assert labels.dtype == torch.int64
-        assert torch.max(images) <= 1.0
-        assert torch.min(images) >= 0.0
-        assert torch.max(labels) < 10
-        assert torch.min(labels) >= 0
-        break  # Test only first batch
+    # Act & Assert - verify dataloader formats
+    assert len(train_loader) > 0
+    assert len(test_loader) > 0
+    assert len(val_loader) > 0
 
-    # Verify val loader properties and data
-    assert isinstance(val_loader, DataLoader)
-    assert len(val_loader.dataset) == 5000
-    for batch in val_loader:
-        images, labels = batch
-        assert images.shape[0] == min(32, len(images))
-        assert images.shape[1:] == (1, 28, 28)
-        assert images.dtype == torch.float32
-        assert labels.shape[0] == min(32, len(labels))
-        assert labels.dtype == torch.int64
-        assert torch.max(images) <= 1.0
-        assert torch.min(images) >= 0.0
-        assert torch.max(labels) < 10
-        assert torch.min(labels) >= 0
-        break  # Test only first batch
 
-    # Verify test loader properties and data
-    assert isinstance(test_loader, DataLoader)
-    assert len(test_loader.dataset) == 10000
-    for batch in test_loader:
-        images, labels = batch
-        assert images.shape[0] == min(32, len(images))
-        assert images.shape[1:] == (1, 28, 28)
-        assert images.dtype == torch.float32
-        assert labels.shape[0] == min(32, len(labels))
-        assert labels.dtype == torch.int64
-        assert torch.max(images) <= 1.0
-        assert torch.min(images) >= 0.0
-        assert torch.max(labels) < 10
-        assert torch.min(labels) >= 0
-        break  # Test only first batch
+def test_invalid_dataset_path() -> None:
+    """Test error handling for invalid dataset paths."""
+    with pytest.raises(RuntimeError, match="Dataset not found"):
+        InsPLADDataset(
+            root="/path/does/not/exist",
+            asset_type=AssetType.GLASS_INSULATOR,
+            train=True,
+        )
