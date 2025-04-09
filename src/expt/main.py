@@ -65,7 +65,7 @@ def training(config: Config) -> str | None:
             callbacks=[
                 RichModelSummary(3),  # print model structure
                 create_rich_progress_bar(),
-                logger.checkpoint_callback(),
+                logger.checkpoint_callback("val_loss", "min"),
             ],
             accelerator="gpu",
             max_epochs=config.training.max_epochs,
