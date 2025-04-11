@@ -55,10 +55,6 @@ class InsPLADDataset(VisionDataset):
     while test data contains both normal and anomalous samples
     """
 
-    # These values should be calculated from your dataset
-    mean = (0.485, 0.456, 0.406)  # RGB channels
-    std = (0.229, 0.224, 0.225)  # RGB channels
-
     def __init__(
         self,
         root: str | Path,
