@@ -1,12 +1,14 @@
 import math
 from pathlib import Path
+from typing import get_args
 
 import pytest
 import torch
 from PIL import Image
 from torchvision.transforms import v2
 
-from expt.data.dataset import AssetType, DataModule, InsPLADDataset
+from expt.config import AssetType
+from expt.data.dataset import DataModule, InsPLADDataset
 
 
 @pytest.fixture
@@ -16,7 +18,7 @@ def dataset_dir() -> Path:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("asset_type", list(AssetType))
+@pytest.mark.parametrize("asset_type", list(get_args(AssetType)))
 def test_insplad_dataset_train(dataset_dir: Path, asset_type: AssetType) -> None:
     """Test the InsPLAD dataset with training data for all asset types."""
     # Arrange
@@ -41,7 +43,7 @@ def test_insplad_dataset_train(dataset_dir: Path, asset_type: AssetType) -> None
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("asset_type", list(AssetType))
+@pytest.mark.parametrize("asset_type", list(get_args(AssetType)))
 def test_insplad_dataset_test(dataset_dir: Path, asset_type: AssetType) -> None:
     """Test the InsPLAD dataset with test data for all asset types."""
     # Arrange
@@ -68,7 +70,7 @@ def test_insplad_dataset_test(dataset_dir: Path, asset_type: AssetType) -> None:
             assert label == 1
 
 
-@pytest.mark.parametrize("asset_type", list(AssetType))
+@pytest.mark.parametrize("asset_type", list(get_args(AssetType)))
 def test_transform_correctly_applied(dataset_dir: Path, asset_type: AssetType) -> None:
     """Test that transforms are correctly applied to dataset images."""
     # Arrange
@@ -92,7 +94,7 @@ def test_transform_correctly_applied(dataset_dir: Path, asset_type: AssetType) -
     assert len(img.shape) == 3  # [H, W, C] or [C, H, W]
 
 
-@pytest.mark.parametrize("asset_type", list(AssetType))
+@pytest.mark.parametrize("asset_type", list(get_args(AssetType)))
 def test_data_module_setup(dataset_dir: Path, asset_type: AssetType) -> None:
     """Test DataModule correctly splits training data."""
     # Arrange
@@ -116,7 +118,7 @@ def test_data_module_setup(dataset_dir: Path, asset_type: AssetType) -> None:
     )
 
 
-@pytest.mark.parametrize("asset_type", list(AssetType))
+@pytest.mark.parametrize("asset_type", list(get_args(AssetType)))
 def test_data_module_loaders(dataset_dir: Path, asset_type: AssetType) -> None:
     """Test DataModule dataloaders return correctly formatted batches."""
     # Arrange
@@ -146,7 +148,5 @@ def test_invalid_dataset_path() -> None:
     """Test error handling for invalid dataset paths."""
     with pytest.raises(RuntimeError, match="Dataset not found"):
         InsPLADDataset(
-            root="/path/does/not/exist",
-            asset_type=AssetType.GLASS_INSULATOR,
-            train=True,
+            root="/path/does/not/exist", asset_type=get_args(AssetType)[0], train=True
         )
