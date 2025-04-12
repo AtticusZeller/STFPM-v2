@@ -187,15 +187,25 @@ class STFPM(pl.LightningModule):
 
     def on_test_epoch_end(self) -> None:
         """Process collected outputs of test_step and compute metrics."""
-        # Concatenate all outputs from test steps
+        # Concatenate all outputs from test steps, ensuring proper dimensions
         all_anomaly_maps = torch.cat(
-            [output["anomaly_maps"] for output in self.test_step_outputs]
+            [
+                output["anomaly_maps"].unsqueeze(0)
+                if output["anomaly_maps"].dim() == 3
+                else output["anomaly_maps"]
+                for output in self.test_step_outputs
+            ]
         )
 
-        # Collect and denormalize images here instead of in plot_anomaly_map
         all_images_normalized = torch.cat(
-            [output["images"] for output in self.test_step_outputs]
+            [
+                output["images"].unsqueeze(0)
+                if output["images"].dim() == 3
+                else output["images"]
+                for output in self.test_step_outputs
+            ]
         )
+
         # Denormalize images (using ImageNet statistics)
         mean = torch.tensor(
             [0.485, 0.456, 0.406], device=all_images_normalized.device
@@ -205,11 +215,24 @@ class STFPM(pl.LightningModule):
         ).view(1, 3, 1, 1)
         all_images = all_images_normalized * std + mean
         all_images = torch.clamp(all_images, 0, 1)  # Ensure values are in [0, 1]
-        all_anomaly_scores = torch.cat(
-            [output["anomaly_scores"] for output in self.test_step_outputs]
-        )
-        all_labels = torch.cat([output["labels"] for output in self.test_step_outputs])
 
+        all_anomaly_scores = torch.cat(
+            [
+                output["anomaly_scores"].unsqueeze(0)
+                if output["anomaly_scores"].dim() == 0
+                else output["anomaly_scores"]
+                for output in self.test_step_outputs
+            ]
+        )
+
+        all_labels = torch.cat(
+            [
+                output["labels"].unsqueeze(0)
+                if output["labels"].dim() == 0
+                else output["labels"]
+                for output in self.test_step_outputs
+            ]
+        )
         # Calculate image-level AUROC
         self.auroc.update(all_anomaly_scores, all_labels)
         image_auroc = self.auroc.compute()
@@ -254,7 +277,7 @@ class STFPM(pl.LightningModule):
 def create_model(config: Config, model_path: Path | None = None) -> pl.LightningModule:
     if config.model.name.lower() == "stpfm":
         return (
-            STFPM(backbone=config.model.backbone)
+            STFPM(backbone=config.model.backbone, lr=config.optimizer.lr)
             if model_path is None
             else STFPM.load_from_checkpoint(model_path)
         )
