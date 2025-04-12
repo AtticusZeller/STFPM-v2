@@ -1,7 +1,7 @@
 data:
   asset_type: glass-insulator
   augmentation: null
-  batch_size: 4
+  batch_size: 32
   dataset: InsPLAD
   transform: imagenet
 logger:
@@ -12,7 +12,7 @@ model:
   backbone: resnet18
   name: STPFM
 optimizer:
-  lr: 0.4
+  lr: 0.5
   name: adam
 training:
-  max_epochs: 50
+  max_epochs: 100

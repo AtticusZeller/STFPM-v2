@@ -46,7 +46,8 @@ class STFPMLoss(nn.Module):
         of the paper. The loss is computed as:
         1. L2 normalize teacher and student features
         2. Compute MSE loss between normalized features
-        3. Scale loss by spatial dimensions (height * width)
+        3. Scale loss by spatial dimensions (height * width * batch)
+        NOTE: we add batch size for scale
 
         Args:
             teacher_feats (torch.Tensor): Features from teacher network with shape
@@ -57,11 +58,11 @@ class STFPMLoss(nn.Module):
         Returns:
             torch.Tensor: Scalar loss value for the layer
         """
-        height, width = teacher_feats.shape[2:]
+        batch_size, _, height, width = teacher_feats.shape
 
         norm_teacher_features = F.normalize(teacher_feats)
         norm_student_features = F.normalize(student_feats)
-        return (0.5 / (width * height)) * self.mse_loss(
+        return (0.5 / (width * height * batch_size)) * self.mse_loss(
             norm_teacher_features, norm_student_features
         )
 
