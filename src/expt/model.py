@@ -252,19 +252,6 @@ class STFPM(pl.LightningModule):
             "Sample Anomaly Maps",
         )
 
-        # NOTE: no sure
-        # Calculate pixel-level AUROC
-        # # Reshape anomaly maps and create pixel-level labels
-        # _, _, height, width = all_anomaly_maps.shape
-        # pixel_scores = all_anomaly_maps.view(-1)  # Flatten all pixels
-
-        # # Create pixel-level ground truth by repeating image labels for each pixel
-        # pixel_labels = all_labels.view(-1, 1, 1).repeat(1, height, width).view(-1)
-
-        # # Calculate pixel-level AUROC
-        # pixel_auroc = self.auroc(pixel_scores, pixel_labels)
-        # self.log("test_pixel_auroc", pixel_auroc)
-
         # Clear the outputs to free memory
         self.test_step_outputs.clear()
         self.auroc.reset()

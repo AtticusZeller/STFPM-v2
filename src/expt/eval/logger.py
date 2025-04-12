@@ -192,8 +192,8 @@ class LoggerManager(WandbLogger):
         self.experiment.log(
             {
                 title: wandb.plot.roc_curve(
-                    y_true=y_true,
-                    y_probas=y_probas,
+                    y_true=y_true,  # type: ignore
+                    y_probas=y_probas,  # type: ignore
                     labels=[
                         "Normal",
                         "Anomaly",
@@ -223,9 +223,6 @@ class LoggerManager(WandbLogger):
         # Create a list to store the final visualization images
         visualizations = plot_anomaly_map(
             images=images, original_images=original_images
-        )
-        print(
-            f"Logging {len(visualizations)} anomaly maps with original images to wandb"
         )
         # Create a wandb Table
         table = wandb.Table(columns=["id", "image", "label"])
