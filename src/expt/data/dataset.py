@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -9,43 +8,7 @@ from PIL import Image
 from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 
-
-class AssetType(StrEnum):
-    """Enum of available asset types in the InsPLAD dataset"""
-
-    DAMPER_PREFORMED = "damper-preformed"  # test/good, train/good
-    DAMPER_STOCKBRIDGE = "damper-stockbridge"  # test/good or test/rust, train/good
-    GLASS_INSULATOR = "glass-insulator"  # test/good or test/missingcap, train/good
-    GLASS_INSULATOR_BIG_SHACKLE = (
-        "glass-insulator-big-shackle"  # test/good or test/rust, train/good
-    )
-    GLASS_INSULATOR_SMALL_SHACKLE = (
-        "glass-insulator-small-shackle"  # test/good or test/nest, train/good
-    )
-    GLASS_INSULATOR_TOWER_SHACKLE = (
-        "glass-insulator-tower-shackle"  # test/good or test/rust, train/good
-    )
-    LIGHTNING_ROD_SHACKLE = (
-        "lightning-rod-shackle"  # test/good or test/rust, train/good
-    )
-    LIGHTNING_ROD_SUSPENSION = (
-        "lightning-rod-suspension"  # test/good or test/rust, train/good
-    )
-    PLATE = "plate"  # test/good or test/peeling-paint, train/good
-    POLYMER_INSULATOR = "polymer-insulator"  # test/good or test/torned-up, train/good
-    POLYMER_INSULATOR_LOWER_SHACKLE = (
-        "polymer-insulator-lower-shackle"  # test/good or test/rust, train/good
-    )
-    POLYMER_INSULATOR_TOWER_SHACKLE = (
-        "polymer-insulator-tower-shackle"  # test/good or test/rust, train/good
-    )
-    POLYMER_INSULATOR_UPPER_SHACKLE = (
-        "polymer-insulator-upper-shackle"  # test/good or test/rust, train/good
-    )
-    SPACER = "spacer"  # test/good, train/good
-    VARI_GRIP = "vari-grip"  # test/good or test/nest or test/rust, train/good
-    YOKE = "yoke"  # test/good, train/good
-    YOKE_SUSPENSION = "yoke-suspension"  # test/good or test/rust, train/good
+from expt.config import AssetType
 
 
 class InsPLADDataset(VisionDataset):
@@ -54,10 +17,6 @@ class InsPLADDataset(VisionDataset):
     Training data contains only normal ("good") samples
     while test data contains both normal and anomalous samples
     """
-
-    # These values should be calculated from your dataset
-    mean = (0.485, 0.456, 0.406)  # RGB channels
-    std = (0.229, 0.224, 0.225)  # RGB channels
 
     def __init__(
         self,
@@ -78,7 +37,7 @@ class InsPLADDataset(VisionDataset):
         self._train = train
 
         # Set up paths
-        self._asset_dir = self.root / asset_type.value
+        self._asset_dir = self.root / asset_type
         self._split_dir = self._asset_dir / ("train" if train else "test")
 
         if not self._asset_dir.exists():
@@ -199,7 +158,7 @@ class DataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.train_transform = train_transform
         self.val_transform = val_transform or train_transform
-        self.test_transform = test_transform or val_transform
+        self.test_transform = test_transform or train_transform
         self.val_split = val_split
         self.num_workers = num_workers
 

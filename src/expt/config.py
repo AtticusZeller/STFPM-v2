@@ -6,52 +6,64 @@ from typing import Any, Literal
 import yaml
 from rich import print
 
+BackBoneT = Literal["resnet18"]
+
 
 @dataclass
 class ModelConfig:
-    name: str = "MLP"
-    dropout: float = 0.2
-    activation: str | None = None
-    # MLP
-    n_layer_1: int | None = None
-    n_layer_2: int | None = None
-    # CNN
-    n_channels_1: int | None = None
-    n_channels_2: int | None = None
-    n_fc_1: int | None = None
-    # EfficientNet
-    efficient_version: Literal["s", "m", "l"] | None = None
-    # Fine-tuning
-    unfreeze_layers: list[str] | None = None
+    name: str = "STPFM"
+    backbone: BackBoneT = "resnet18"
 
 
 @dataclass
 class OptimizerConfig:
     name: str = "adam"
-    lr: float = 1e-4
+    lr: float = 0.4
+
+
+# Define asset type literals
+AssetType = Literal[
+    "damper-preformed",  # test/good, train/good
+    "damper-stockbridge",  # test/good or test/rust, train/good
+    "glass-insulator",  # test/good or test/missingcap, train/good
+    "glass-insulator-big-shackle",  # test/good or test/rust, train/good
+    "glass-insulator-small-shackle",  # test/good or test/nest, train/good
+    "glass-insulator-tower-shackle",  # test/good or test/rust, train/good
+    "lightning-rod-shackle",  # test/good or test/rust, train/good
+    "lightning-rod-suspension",  # test/good or test/rust, train/good
+    "plate",  # test/good or test/peeling-paint, train/good
+    "polymer-insulator",  # test/good or test/torned-up, train/good
+    "polymer-insulator-lower-shackle",  # test/good or test/rust, train/good
+    "polymer-insulator-tower-shackle",  # test/good or test/rust, train/good
+    "polymer-insulator-upper-shackle",  # test/good or test/rust, train/good
+    "spacer",  # test/good, train/good
+    "vari-grip",  # test/good or test/nest or test/rust, train/good
+    "yoke",  # test/good, train/good
+    "yoke-suspension",  # test/good or test/rust, train/good
+]
+
+TransformT = Literal["imagenet", "base"]
 
 
 @dataclass
 class DataConfig:
-    dataset: str = "MNIST"
-    batch_size: int = 128
+    dataset: str = "InsPLAD"
+    asset_type: AssetType = "damper-preformed"
+    batch_size: int = 4
     augmentation: list[str] | None = None
-    transform: Literal["standardize", "base"] = "standardize"
+    transform: TransformT = "imagenet"
 
 
 @dataclass
 class TrainingConfig:
-    max_epochs: int = 25
-    gradient_clip_val: float | None = None
-    accumulate_grad_batches: int | None = None
-    precision: int | None = None
+    max_epochs: int = 100
 
 
 @dataclass
 class LoggerConfig:
     run_name: str = "test_run"
     entity: str = "atticux"  # set to name of your wandb team
-    project: str = "pytorch-lightning-uv"
+    project: str = "STPFM-v2"
 
 
 @dataclass
@@ -120,7 +132,4 @@ if __name__ == "__main__":
     config = config_manager.load_config("config/train.yml")
 
     print("\nConfiguration loaded successfully:")
-    print(f"Model name: {config.model.name}")
-    print(f"Learning rate: {config.optimizer.lr}")
-    print(f"Dataset: {config.data.dataset}")
-    print(f"Max epochs: {config.training.max_epochs}")
+    print(asdict(config))

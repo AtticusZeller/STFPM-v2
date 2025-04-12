@@ -1,353 +1,272 @@
 from pathlib import Path
-from typing import Literal
+from typing import Any
 
 import lightning.pytorch as pl
 import timm
 import torch
-from rich import print
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import Tensor, nn
-from torch.nn import BatchNorm1d, CrossEntropyLoss, Dropout, Linear, functional as F
 from torch.optim import Adam, Optimizer
-from torchmetrics.functional import accuracy
+from torchmetrics.classification import BinaryAUROC
 
-from expt.config import Config
-from expt.utils import check_transform
+from expt.config import BackBoneT, Config
+from expt.eval.logger import LoggerManager
+from expt.geometry import compute_anomaly_map
+from expt.loss import STFPMLoss
 
 
-class BaseModel(pl.LightningModule):
-    """MINST MLP model
-    Ref: https://colab.research.google.com/github/wandb/examples/blob/master/colabs/pytorch-lightning/Optimize_Pytorch_Lightning_models_with_Weights_%26_Biases.ipynb#scrollTo=gzaiGUAz1saI
+class FeatureExtractor(nn.Module):
+    """
+    BackBone for feature extraction\n
+    Ref:
+        1. https://huggingface.co/docs/timm/v1.0.15/en/feature_extraction#flexible-intermediate-feature-map-extraction
+        2. https://github.com/open-edge-platform/anomalib/blob/main/src/anomalib/models/image/stfpm/torch_model.py
     """
 
-    def forward(self, x: Tensor) -> Tensor:
-        raise NotImplementedError
+    def __init__(
+        self, name: BackBoneT, pretrained: bool = True, requires_grad: bool = True
+    ) -> None:
+        super().__init__()
+        self._feature_extractor = timm.create_model(
+            name, pretrained=pretrained, features_only=True
+        )
+        self.pretrained = pretrained
+        self.requires_grad = requires_grad
+        # turn off gradient calculation for all parameters
+        if not self.requires_grad:
+            self._feature_extractor.eval()
+            for parameters in self._feature_extractor.parameters():
+                parameters.requires_grad = False
 
-    def training_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
-        """needs to return a loss from a single batch"""
-        _, loss, acc = self._get_preds_loss_accuracy(batch)
+        self.out_dims: list[int] = self._feature_extractor.feature_info.channels()
 
-        # Log loss and metric
-        self.log("train_loss", loss)
-        self.log("train_accuracy", acc)
+    def forward(self, inputs: torch.Tensor) -> list[torch.Tensor]:
+        """
+        Args:
+            inputs(torch.Tensor): images, `(B, C, H, W)`
 
+        Returns:
+            list[torch.Tensor]: Features from layers, with shape `(B, C, H, W)`
+        """
+        if self.requires_grad:
+            return self._feature_extractor(inputs)
+        else:
+            with torch.no_grad():
+                return self._feature_extractor(inputs)
+
+
+class STFPMModel(nn.Module):
+    def __init__(self, backbone: BackBoneT = "resnet18") -> None:
+        super().__init__()
+
+        # models
+        self.teacher_model = FeatureExtractor(
+            name=backbone, pretrained=True, requires_grad=False
+        )
+        self.student_model = FeatureExtractor(
+            name=backbone, pretrained=False, requires_grad=True
+        )
+
+    def forward(self, images: torch.Tensor) -> tuple[list[Tensor], list[Tensor]]:
+        """
+        Args:
+            images (torch.Tensor): input images of shape `(B, C, H, W)`
+
+        Returns:
+            tuple[list[Tensor], list[Tensor]]: Features from teacher and student models,
+                with shape `(B, C, H, W)`
+        """
+        return self.teacher_model.forward(images), self.student_model.forward(images)
+
+
+class STFPM(pl.LightningModule):
+    """STFPM LightningModule for anomaly detection\n
+    Ref:
+        1. https://lightning.ai/docs/pytorch/stable/common/lightning_module.html
+    """
+
+    def __init__(self, backbone: BackBoneT = "resnet18", lr: float = 1e-3) -> None:
+        super().__init__()
+
+        # models
+        self.model = STFPMModel(backbone=backbone)
+        self.criterion = STFPMLoss()
+
+        # metrics
+        self.auroc = BinaryAUROC()
+
+        self.lr = lr
+        # save hyperparameters
+        self.save_hyperparameters()
+        self.test_step_outputs: list[dict[str, Any]] = []
+
+    @property
+    def logger(self) -> LoggerManager:
+        if self.trainer.logger is None:
+            raise ValueError("Logger is not defined. Please set a logger.")
+        return self.trainer.logger  # type: ignore
+
+    def training_step(
+        self, batch: tuple[Tensor, Tensor], batch_idx: int
+    ) -> STEP_OUTPUT:
+        """step for training dataset 80% of all normal images for training
+        train_loss for optimizing model
+        Args:
+            batch (tuple[Tensor, Tensor]): batch of image, batch of labels
+            batch_idx (int): batch index
+        """
+        x, _ = batch
+        teacher_features, student_features = self.model.forward(x)
+        loss = self.criterion(teacher_features, student_features)
+
+        self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True)
         return loss
 
-    def validation_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
-        """used for logging metrics"""
-        preds, loss, acc = self._get_preds_loss_accuracy(batch)
+    def validation_step(
+        self, batch: tuple[Tensor, Tensor], batch_idx: int
+    ) -> STEP_OUTPUT:
+        """step for validation dataset 20% of all normal images for training
+        val_loss is watched for saving checkpoint
+        Args:
+            batch (tuple[Tensor, Tensor]): batch of image, batch of labels
+            batch_idx (int): batch index
+        """
+        x, _ = batch
+        teacher_features, student_features = self.model.forward(x)
+        loss = self.criterion(teacher_features, student_features)
 
-        # Log loss and metric
-        self.log("val_loss", loss)
-        self.log("val_accuracy", acc)
+        # on_epoch for epoch performance
+        self.log("val_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
+        return loss
 
-        # Let's return preds to use it in a custom callback
-        return preds
+    def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> STEP_OUTPUT:
+        """Compute the anomaly map and image-level anomaly score for each test image.
+        And collect the outputs for metrics(AUROC,ROC) calculation.
+        Args:
+            batch (tuple[Tensor, Tensor]): batch of image, batch of labels
+            batch_idx (int): batch index
+        """
+        x, y = batch
+        teacher_features, student_features = self.model.forward(x)
 
-    def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> None:
-        """used for logging metrics"""
-        _, loss, acc = self._get_preds_loss_accuracy(batch)
+        # Compute loss
+        loss = self.criterion(teacher_features, student_features)
 
-        # Log loss and metric
-        self.log("test_loss", loss)
-        self.log("test_accuracy", acc)
+        # Get image size for anomaly map calculation
+        image_size = x.shape[-2:]  # Height and width of input images
+
+        # Compute anomaly map
+        anomaly_maps = compute_anomaly_map(
+            teacher_features=teacher_features,
+            student_features=student_features,
+            image_size=image_size,
+        )
+
+        # Calculate image-level anomaly scores (max value in anomaly map)
+        anomaly_scores = torch.amax(anomaly_maps, dim=(-2, -1)).squeeze()
+
+        # on_epoch for epoch performance
+        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "test_anomaly_score",
+            anomaly_scores.mean(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+        # Return values for epoch_end processing
+        test_output = {
+            "anomaly_maps": anomaly_maps,  # visualization, (B, 1, H, W)
+            "images": x,  # for visualization, (B, C, H, W)
+            "anomaly_scores": anomaly_scores,  # for AUROC, (B, )
+            "labels": y,  # ground truth labels,  (B, )
+        }
+        self.test_step_outputs.append(test_output)
+        return test_output
+
+    def on_test_epoch_end(self) -> None:
+        """Process collected outputs of test_step and compute metrics."""
+        # Concatenate all outputs from test steps, ensuring proper dimensions
+        all_anomaly_maps = torch.cat(
+            [
+                output["anomaly_maps"].unsqueeze(0)
+                if output["anomaly_maps"].dim() == 3
+                else output["anomaly_maps"]
+                for output in self.test_step_outputs
+            ]
+        )
+
+        all_images_normalized = torch.cat(
+            [
+                output["images"].unsqueeze(0)
+                if output["images"].dim() == 3
+                else output["images"]
+                for output in self.test_step_outputs
+            ]
+        )
+
+        # Denormalize images (using ImageNet statistics)
+        mean = torch.tensor(
+            [0.485, 0.456, 0.406], device=all_images_normalized.device
+        ).view(1, 3, 1, 1)
+        std = torch.tensor(
+            [0.229, 0.224, 0.225], device=all_images_normalized.device
+        ).view(1, 3, 1, 1)
+        all_images = all_images_normalized * std + mean
+        all_images = torch.clamp(all_images, 0, 1)  # Ensure values are in [0, 1]
+
+        all_anomaly_scores = torch.cat(
+            [
+                output["anomaly_scores"].unsqueeze(0)
+                if output["anomaly_scores"].dim() == 0
+                else output["anomaly_scores"]
+                for output in self.test_step_outputs
+            ]
+        )
+
+        all_labels = torch.cat(
+            [
+                output["labels"].unsqueeze(0)
+                if output["labels"].dim() == 0
+                else output["labels"]
+                for output in self.test_step_outputs
+            ]
+        )
+        # Calculate image-level AUROC
+        self.auroc.update(all_anomaly_scores, all_labels)
+        image_auroc = self.auroc.compute()
+        self.log("test_image_auroc", image_auroc)
+
+        # Plot image-level ROC
+        self.logger.log_roc_curve(
+            all_labels.cpu().numpy(),
+            all_anomaly_scores.cpu().numpy(),
+            title="ROC Curve",
+        )
+        # Plot sample anomaly maps randomly
+        self.logger.log_anomaly_map(
+            list(all_anomaly_maps.cpu().numpy()),
+            list(all_images.cpu().numpy()),
+            list(all_labels.cpu().numpy()),
+            "Sample Anomaly Maps",
+        )
+
+        # Clear the outputs to free memory
+        self.test_step_outputs.clear()
+        self.auroc.reset()
 
     def configure_optimizers(self) -> Optimizer:
         """defines model optimizer"""
-        return Adam(self.parameters(), lr=self.lr)
-
-    def _get_preds_loss_accuracy(
-        self, batch: tuple[Tensor, Tensor]
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """convenience function since train/valid/test steps are similar"""
-        x, y = batch
-        logits = self(x)
-        preds = torch.argmax(logits, dim=1)
-        loss = self.loss(logits, y)
-        acc = accuracy(preds, y, "multiclass", num_classes=10)
-        return preds, loss, acc
+        return Adam(self.model.student_model.parameters(), lr=self.lr)
 
 
-class MLP(BaseModel):
-    """MINST MLP model
-    Ref: https://colab.research.google.com/github/wandb/examples/blob/master/colabs/pytorch-lightning/Optimize_Pytorch_Lightning_models_with_Weights_%26_Biases.ipynb#scrollTo=gzaiGUAz1saI
-    """
-
-    def __init__(
-        self,
-        num_classes: int = 10,
-        n_layer_1: int = 128,
-        n_layer_2: int = 256,
-        lr: float = 1e-3,
-        dropout_rate: float = 0.2,
-    ) -> None:
-        super().__init__()
-
-        # mnist images are (1, 28, 28) (channels, width, height)
-        self.layer_1 = Linear(28 * 28, n_layer_1)
-        self.bn_1 = BatchNorm1d(n_layer_1)
-        self.dropout_1 = Dropout(dropout_rate)
-        self.layer_2 = Linear(n_layer_1, n_layer_2)
-        self.bn_2 = BatchNorm1d(n_layer_2)
-        self.dropout_2 = Dropout(dropout_rate)
-        self.layer_3 = Linear(n_layer_2, num_classes)
-
-        # loss
-        self.loss = CrossEntropyLoss()
-
-        # optimizer parameters
-        self.lr = lr
-
-        # save hyper-parameters to self.hparams (auto-logged by W&B)
-        self.save_hyperparameters()
-
-    def forward(self, x: Tensor) -> Tensor:
-        batch_size, channels, width, height = x.size()
-
-        # (b, 1, 28, 28) -> (b, 1*28*28)
-        x = x.view(batch_size, -1)
-
-        # let's do 3 x (linear + relu)
-        x = self.layer_1(x)
-        x = self.bn_1(x)
-        x = F.relu(x)
-        x = self.dropout_1(x)
-
-        x = self.layer_2(x)
-        x = self.bn_2(x)
-        x = F.relu(x)
-        x = self.dropout_2(x)
-
-        x = self.layer_3(x)
-
-        return x
-
-
-class CNN(BaseModel):
-    """CNN model for Fashion MNIST dataset
-    Architecture:
-    - 2 Convolutional layers followed by max pooling
-    - 2 Fully connected layers
-    - Batch normalization and dropout for regularization
-    """
-
-    def __init__(
-        self,
-        num_classes: int = 10,
-        n_channels_1: int = 32,
-        n_channels_2: int = 64,
-        n_fc_1: int = 128,
-        lr: float = 1e-3,
-        dropout_rate: float = 0.2,
-    ) -> None:
-        super().__init__()
-
-        # First conv block
-        self.conv1 = torch.nn.Conv2d(1, n_channels_1, kernel_size=5, padding=2)
-        self.bn1 = torch.nn.BatchNorm2d(n_channels_1)
-        self.pool1 = torch.nn.MaxPool2d(kernel_size=2)
-        self.dropout1 = Dropout(dropout_rate)
-
-        # Second conv block
-        self.conv2 = torch.nn.Conv2d(
-            n_channels_1, n_channels_2, kernel_size=3, padding=1
-        )
-        self.bn2 = torch.nn.BatchNorm2d(n_channels_2)
-        self.pool2 = torch.nn.MaxPool2d(kernel_size=2)
-        self.dropout2 = Dropout(dropout_rate)
-
-        # Calculate size after convolutions and pooling
-        # Input: 28x28 -> Conv1: 28x28 -> Pool1: 14x14 -> Conv2: 14x14 -> Pool2: 7x7
-        conv_output_size = 7 * 7 * n_channels_2
-
-        # Fully connected layers
-        self.fc1 = Linear(conv_output_size, n_fc_1)
-        self.bn3 = BatchNorm1d(n_fc_1)
-        self.dropout3 = Dropout(dropout_rate)
-        self.fc2 = Linear(n_fc_1, num_classes)
-
-        # loss
-        self.loss = CrossEntropyLoss()
-
-        # optimizer parameters
-        self.lr = lr
-
-        # save hyper-parameters to self.hparams (auto-logged by W&B)
-        self.save_hyperparameters()
-
-    def forward(self, x: Tensor) -> Tensor:
-        # First conv block
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = F.relu(x)
-        x = self.pool1(x)
-        x = self.dropout1(x)
-
-        # Second conv block
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = F.relu(x)
-        x = self.pool2(x)
-        x = self.dropout2(x)
-
-        # Flatten
-        x = x.view(x.size(0), -1)
-
-        # Fully connected layers
-        x = self.fc1(x)
-        x = self.bn3(x)
-        x = F.relu(x)
-        x = self.dropout3(x)
-        x = self.fc2(x)
-
-        return x
-
-
-class FineTuneBaseModel(BaseModel):
-    def freeze_except(self, trainable: list[str], debug: bool = False) -> None:
-        """freeze all layers except the ones specified in trainable
-
-        Parameters
-        ----------
-        trainable : list[str]
-            list of layer names to be unfrozen
-        debug : bool, optional
-            print all finetune layers, by default False
-        """
-        # Freeze all layers
-        for _, param in self.model.named_parameters():
-            param.requires_grad = False
-        # Unfreeze the layers
-        fine_tune_params = []
-        fine_tune_layers = set()
-        for module_name, module in self.model.named_modules():
-            if module_name in trainable:
-                fine_tune_layers.add(module_name)
-                for name, param in module.named_parameters():
-                    param.requires_grad = True
-                    fine_tune_params.append(module_name + "." + name)
-        print(f"Fine-tuning {len(fine_tune_layers)} layers:")
-        layers = list(fine_tune_layers)
-        layers.sort()
-        print(layers)
-        if debug:
-            print(f"Fine-tuning {len(fine_tune_params)} paras:")
-            print(fine_tune_params)
-
-
-class ResNet18Transfer(FineTuneBaseModel):
-    """ResNet18 transfer learning model for Fashion MNIST
-    Features:
-    - Uses pretrained ResNet18 as backbone
-    - Custom classification head
-    - Supports feature extraction and fine-tuning
-    """
-
-    def __init__(
-        self,
-        num_classes: int = 10,
-        lr: float = 1e-3,
-        unfreeze_layers: list[str] | None = None,
-    ) -> None:
-        super().__init__()
-
-        # Load ResNet18 model without pretrained weights
-        self.model = timm.create_model(
-            "resnet18", pretrained=True, num_classes=num_classes
-        )
-        # check_transform(self.model)
-        # loss
-        self.lr = lr
-        self.loss = nn.CrossEntropyLoss()
-
-        # save hyperparameters
-        self.save_hyperparameters()
-        if unfreeze_layers is not None:
-            self.freeze_except(unfreeze_layers)
-        # self.resnet = torch.compile(self.resnet)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)
-
-
-class EfficientNetV2Transfer(FineTuneBaseModel):
-    """EfficientNet transfer learning model for Fashion MNIST
-    Features:
-    - Uses pretrained EfficientNet as backbone
-    - Custom classification head
-    - Supports feature extraction and fine-tuning
-    Ref: https://lightning.ai/docs/pytorch/stable/advanced/transfer_learning.html#example-imagenet-computer-vision
-    """
-
-    def __init__(
-        self,
-        num_classes: int = 10,
-        efficient_version: Literal["s", "m", "l"] = "s",
-        lr: float = 1e-3,
-        unfreeze_layers: list[str] | None = None,
-    ) -> None:
-        super().__init__()
-
-        self.model = timm.create_model(
-            f"tf_efficientnetv2_{efficient_version}",
-            pretrained=True,
-            num_classes=num_classes,
-        )
-        check_transform(self.model)
-        # loss
-        self.lr = lr
-        self.loss = nn.CrossEntropyLoss()
-
-        # save hyperparameters
-        self.save_hyperparameters()
-        if unfreeze_layers is not None:
-            self.freeze_except(unfreeze_layers)
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.model(x)
-
-
-def create_model(config: Config, model_path: Path | None = None) -> BaseModel:
-    if config.model.name.lower() == "mlp":
+def create_model(config: Config, model_path: Path | None = None) -> pl.LightningModule:
+    if config.model.name.lower() == "stpfm":
         return (
-            MLP(
-                n_layer_1=config.model.n_layer_1,  # type: ignore
-                n_layer_2=config.model.n_layer_2,  # type: ignore
-                lr=config.optimizer.lr,
-                dropout_rate=config.model.dropout,
-            )
+            STFPM(backbone=config.model.backbone, lr=config.optimizer.lr)
             if model_path is None
-            else MLP.load_from_checkpoint(model_path)
+            else STFPM.load_from_checkpoint(model_path)
         )
-    elif config.model.name.lower() == "cnn":
-        return (
-            CNN(
-                n_channels_1=config.model.n_channels_1,  # type: ignore
-                n_channels_2=config.model.n_channels_2,  # type: ignore
-                n_fc_1=config.model.n_fc_1,  # type: ignore
-                lr=config.optimizer.lr,
-                dropout_rate=config.model.dropout,
-            )
-            if model_path is None
-            else CNN.load_from_checkpoint(model_path)
-        )
-    elif config.model.name.lower() == "resnet18":
-        return (
-            ResNet18Transfer(
-                lr=config.optimizer.lr, unfreeze_layers=config.model.unfreeze_layers
-            )
-            if model_path is None
-            else ResNet18Transfer.load_from_checkpoint(model_path)
-        )
-    elif config.model.name.lower() == "efficientnet_v2":
-        return (
-            EfficientNetV2Transfer(
-                lr=config.optimizer.lr,
-                efficient_version=config.model.efficient_version or "s",
-                unfreeze_layers=config.model.unfreeze_layers,
-            )
-            if model_path is None
-            else EfficientNetV2Transfer.load_from_checkpoint(model_path)
-        )
-
     else:
         raise ValueError(f"Model name {config.model.name} not supported.")

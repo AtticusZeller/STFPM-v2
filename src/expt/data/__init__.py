@@ -1,24 +1,27 @@
-from typing import Literal
-
 from torchvision.transforms import v2 as v2
 
-from .dataset import DataModule
+from expt.config import AssetType, TransformT
+from expt.data.transform import base_transform, imagenet_transform
 
-# from .transform import (
-#     base_transform,
-#     efficientnetv2_pt_transform,
-#     resnet_pt_transform,
-#     standardize_transform,
-# )
+from .dataset import DataModule
 
 __all__ = ["create_data_module"]
 
 
 def create_data_module(
-    name: str = "mnist",
+    asset_type: AssetType,
+    name: str = "InsPLAD",
     batch_size: int = 32,
-    transform: Literal[
-        "standardize", "base", "resnet_pt", "efficientnetv2_pt"
-    ] = "standardize",
+    transform: TransformT = "imagenet",
 ) -> DataModule:
-    pass
+    match transform:
+        case "imagenet":
+            return DataModule(
+                "datasets", asset_type, batch_size, train_transform=imagenet_transform()
+            )
+        case "base":
+            return DataModule(
+                "datasets", asset_type, batch_size, train_transform=base_transform()
+            )
+        case _:
+            raise ValueError(f"Unknown transform type of {name} dataset: {transform}")

@@ -47,6 +47,7 @@ def training(config: Config) -> str | None:
         # dataset
         datamodule = create_data_module(
             name=config.data.dataset,
+            asset_type=config.data.asset_type,
             batch_size=config.data.batch_size,
             transform=config.data.transform,
         )
@@ -65,7 +66,7 @@ def training(config: Config) -> str | None:
             callbacks=[
                 RichModelSummary(3),  # print model structure
                 create_rich_progress_bar(),
-                logger.checkpoint_callback(),
+                logger.checkpoint_callback("val_loss", "min"),
             ],
             accelerator="gpu",
             max_epochs=config.training.max_epochs,
@@ -86,6 +87,7 @@ def evaluation(config: Config, run_id: str) -> None:
     # data
     datamodule = create_data_module(
         name=config.data.dataset,
+        asset_type=config.data.asset_type,
         batch_size=config.data.batch_size,
         transform=config.data.transform,
     )

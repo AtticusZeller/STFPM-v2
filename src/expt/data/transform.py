@@ -19,6 +19,7 @@ def imagenet_transform() -> v2.Compose:
             # Convert input to standard format (CHW)
             v2.ToImage(),
             # Resize to 256x256 with best quality
+            # TODO: check shape?
             v2.Resize(
                 (256, 256), interpolation=InterpolationMode.BICUBIC, antialias=True
             ),

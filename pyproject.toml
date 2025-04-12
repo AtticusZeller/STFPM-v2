@@ -1,5 +1,5 @@
 [project]
-name = "Pytorch-Lightning-uv"
+name = "STFPM-v2"
 description = "pytorch template"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,6 +11,8 @@ dependencies = [
     "kornia>=0.8.0",
     "lightning>=2.5.0.post0",
     "matplotlib>=3.10.0",
+    "numpy>=1.26.4",
+    "pandas>=2.2.3",
     "timm>=1.0.14",
     "torch>= 2.1,<= 2.6.0",
     "torchmetrics>=1.6.1",
@@ -24,11 +26,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.6.3", # Linting
-    "mypy>=1.11.2", # Type checking
-    "pre-commit>=3.8.0", # Pre-commit hooks
-    "pytest>=8.3.2", # Testing framework
-    "pytest-sugar>=1.0.0", # Nicer pytest output
+    "ruff>=0.6.3",                   # Linting
+    "mypy>=1.11.2",                  # Type checking
+    "pre-commit>=3.8.0",             # Pre-commit hooks
+    "pytest>=8.3.2",                 # Testing framework
+    "pytest-sugar>=1.0.0",           # Nicer pytest output
     "types-pyyaml>=6.0.12.20241230",
     "git-cliff>=2.8.0",
     "numpy>=1.26.4",
@@ -60,11 +62,9 @@ exclude = ["venv", ".venv", "data"] # ignore dataset preprocessing type checking
 # --strict-config= any warnings about configuration are treated as errors
 # --strict-markers= treat unregistered markers as errors
 addopts        = "-rXs --strict-config --strict-markers"
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
-]
-xfail_strict   = true                                    # Treat tests that are marked as xfail but pass as test failures
-filterwarnings = ["error"]                               # Treat all warnings as errors
+markers        = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+xfail_strict   = true                                                            # Treat tests that are marked as xfail but pass as test failures
+filterwarnings = ["error"]                                                       # Treat all warnings as errors
 pythonpath     = "src/"
 
 ## Linter and formatter
@@ -105,7 +105,7 @@ skip-magic-trailing-comma = true
 ## VCS
 [tool.git-cliff.remote.github]
 owner = "atticuszeller"
-repo  = "Pytorch-Lightning-uv"
+repo  = "STFPM-v2"
 
 [tool.git-cliff.changelog]
 # template for the changelog header
@@ -139,7 +139,7 @@ footer = """
 trim = true
 # postprocessors
 # postprocessors = [
-#   { pattern = '<REPO>', replace = "https://github.com/atticuszeller/Pytorch-Lightning-uv" }, # replace repository URL
+#   { pattern = '<REPO>', replace = "https://github.com/atticuszeller/STFPM-v2" }, # replace repository URL
 # ]
 # render body even when there are no releases to process
 render_always = true

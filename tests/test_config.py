@@ -15,7 +15,9 @@ from expt.config import (
 )
 
 
-def test_generate_default_configs(config_manager: ConfigManager, config_path: Path):
+def test_generate_default_configs(
+    config_manager: ConfigManager, config_path: Path
+) -> None:
     config_manager.generate_default_configs()
     assert (config_path / "train.yml").exists()
 
@@ -26,12 +28,12 @@ def test_generate_default_configs(config_manager: ConfigManager, config_path: Pa
     assert all(
         key in config for key in ["model", "optimizer", "data", "training", "logger"]
     )
-    assert config["model"]["name"] == "MLP"
-    assert config["optimizer"]["lr"] == 1e-4
-    assert config["data"]["dataset"] == "MNIST"
+    assert config["model"]["name"] == "STPFM"
+    assert config["optimizer"]["lr"] == 0.4
+    assert config["data"]["dataset"] == "InsPLAD"
 
 
-def test_load_config(config_manager: ConfigManager, config_path: Path):
+def test_load_config(config_manager: ConfigManager, config_path: Path) -> None:
     config_manager.generate_default_configs()
     config = config_manager.load_config(config_path / "train.yml")
 
@@ -43,14 +45,16 @@ def test_load_config(config_manager: ConfigManager, config_path: Path):
     assert isinstance(config.logger, LoggerConfig)
 
     # Test default values
-    assert config.model.name == "MLP"
-    assert config.optimizer.lr == 1e-4
-    assert config.data.batch_size == 128
-    assert config.training.max_epochs == 25
-    assert config.logger.project == "pytorch-lightning-uv"
+    assert config.model.name == "STPFM"
+    assert config.optimizer.lr == 0.4
+    assert config.data.batch_size == 4
+    assert config.training.max_epochs == 100
+    assert config.logger.project == "STPFM-v2"
 
 
-def test_load_nonexistent_config(config_manager: ConfigManager, config_path: Path):
+def test_load_nonexistent_config(
+    config_manager: ConfigManager, config_path: Path
+) -> None:
     with pytest.raises(FileNotFoundError):
         config_manager.load_config("nonexistent.yml")
 
@@ -61,7 +65,7 @@ def test_load_nonexistent_config(config_manager: ConfigManager, config_path: Pat
         config_manager.load_config(config_path)
 
 
-def test_config_as_dict(config_manager: ConfigManager, config_path: Path):
+def test_config_as_dict(config_manager: ConfigManager, config_path: Path) -> None:
     config_manager.generate_default_configs()
     config = config_manager.load_config(config_path / "train.yml")
     config_dict = asdict(config)
