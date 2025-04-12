@@ -1,5 +1,5 @@
 data:
-  asset_type: damper-preformed
+  asset_type: glass-insulator
   augmentation: null
   batch_size: 4
   dataset: InsPLAD
@@ -15,4 +15,4 @@ optimizer:
   lr: 0.4
   name: adam
 training:
-  max_epochs: 100
+  max_epochs: 50

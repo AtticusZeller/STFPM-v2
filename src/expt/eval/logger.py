@@ -2,15 +2,18 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Self
 
+import numpy as np
 import wandb
 import yaml
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
+from numpy.typing import NDArray
 from rich import print
 from rich.pretty import pprint
 from torch import nn
 
 from expt.config import Config, DataConfig, ModelConfig, OptimizerConfig, TrainingConfig
+from expt.geometry import plot_anomaly_map
 
 
 class LoggerManager(WandbLogger):
@@ -167,3 +170,58 @@ class LoggerManager(WandbLogger):
         # force update sweep config
         self.experiment.config.update(sweep_config, True)
         return config
+
+    def log_roc_curve(
+        self,
+        y_true: NDArray[np.int_],
+        y_pred: NDArray[np.float_],
+        title: str = "ROC Curve",
+    ) -> None:
+        """Log ROC curve to wandb
+        Ref:
+            1. https://wandb.ai/wandb/plots/reports/Plot-ROC-Curves-With-Weights-Biases--VmlldzoyNjk3MDE
+        """
+        self.experiment.log(
+            {
+                title: wandb.plot.roc_curve(
+                    list(y_true), list(y_pred), labels=None, classes_to_plot=None
+                )
+            }
+        )
+
+    def log_anomaly_map(
+        self,
+        images: list[NDArray[np.float_]],
+        original_images: list[NDArray[np.float_]],
+        labels: list[NDArray[np.float_]],
+        title: str = "Anomaly Map",
+    ) -> None:
+        """Log anomaly maps with corresponding original images to wandb
+
+        Args:
+            images (list[NDArray[np.float_]]):
+                List of anomaly maps with shape (1, H, W)
+            original_images (list[NDArray[np.float_]]):
+                List of original images with shape (C, H, W)
+            title (str, optional): Title for the logged images.
+                Defaults to "Anomaly Map".
+        """
+        # Create a list to store the final visualization images
+        visualizations = plot_anomaly_map(
+            images=images, original_images=original_images
+        )
+        print(
+            f"Logging {len(visualizations)} anomaly maps with original images to wandb"
+        )
+        # Create a wandb Table
+        table = wandb.Table(columns=["id", "image", "label"])
+
+        # Add all images to the table
+        for i, img in enumerate(visualizations):
+            lable_str = "good" if labels[i] == 0 else "bad"
+            table.add_data(
+                i, wandb.Image(img, caption=f"Anomaly Detection {i}"), lable_str
+            )
+
+        # Log the table to wandb
+        self.experiment.log({title: table})

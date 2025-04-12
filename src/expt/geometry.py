@@ -1,7 +1,11 @@
 # Copyright (C) 2022-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import numpy as np
 import torch
+from matplotlib import pyplot as plt
+from numpy.typing import NDArray
+from PIL import Image
 from torch.nn import functional as F  # noqa: N812
 
 
@@ -79,3 +83,87 @@ def compute_anomaly_map(
         anomaly_map *= layer_map
 
     return anomaly_map
+
+
+def plot_anomaly_map(
+    images: list[NDArray[np.float_]], original_images: list[NDArray[np.float_]]
+) -> list[NDArray[np.uint8]]:
+    """Visualize the anomaly maps and original images.
+    Args:
+        images (list[NDArray[np.float_]]):
+            List of anomaly maps with shape (1, H, W)
+        original_images (list[NDArray[np.float_]]):
+            List of original images with shape (C, H, W)
+    Returns:
+        list[NDArray[np.uint8]]: List of images with anomaly maps overlaid
+    """
+    # Create a list to store the final visualization images
+    visualizations = []
+    for anomaly_map, orig_img in zip(images, original_images, strict=True):
+        # Ensure anomaly map is in the right shape (H, W)
+        if len(anomaly_map.shape) == 4:  # (B, 1, H, W)
+            anomaly_map = anomaly_map[0, 0]  # Extract to (H, W)
+        elif len(anomaly_map.shape) == 3:  # (1, H, W)
+            anomaly_map = anomaly_map[0]  # Extract to (H, W)
+
+        # Normalize anomaly map to [0, 255]
+        anomaly_map_norm = (
+            (anomaly_map - anomaly_map.min())
+            / (anomaly_map.max() - anomaly_map.min() + 1e-8)
+            * 255
+        )
+        anomaly_map_norm = anomaly_map_norm.astype(np.uint8)
+
+        # Apply colormap to anomaly map
+        cmap = plt.get_cmap("jet")
+        colored_anomaly = (cmap(anomaly_map_norm / 255.0)[:, :, :3] * 255).astype(
+            np.uint8
+        )
+
+        # Process original image
+        if len(orig_img.shape) == 4:  # (B, C, H, W)
+            orig_img = orig_img[0]  # Extract to (C, H, W)
+
+        # Convert to numpy and transpose to (H, W, C) if necessary
+        if orig_img.shape[0] in [1, 3]:  # If channel-first format (C, H, W)
+            orig_img = np.transpose(orig_img, (1, 2, 0))
+
+        # If grayscale, repeat across channels to create RGB
+        if orig_img.shape[-1] == 1:
+            orig_img = np.repeat(orig_img, 3, axis=-1)
+
+        # Normalize original image to [0, 255] if needed
+        if orig_img.max() <= 1.0:
+            orig_img = (orig_img * 255).astype(np.uint8)
+        else:
+            orig_img = orig_img.astype(np.uint8)
+
+        # Convert numpy arrays to PIL Images
+        pil_orig_img = Image.fromarray(orig_img)
+        pil_anomaly_img = Image.fromarray(colored_anomaly)
+
+        # Make sure both images have the same height
+        width_orig, height_orig = pil_orig_img.size
+        width_anomaly, height_anomaly = pil_anomaly_img.size
+
+        # Resize if necessary to match heights
+        if height_orig != height_anomaly:
+            # Preserve aspect ratio while matching height
+            new_width_anomaly = int(width_anomaly * (height_orig / height_anomaly))
+            pil_anomaly_img = pil_anomaly_img.resize(
+                (new_width_anomaly, height_orig), Image.Resampling.LANCZOS
+            )
+
+        # Create new image to hold both side by side
+        total_width = width_orig + pil_anomaly_img.width
+        concat_img = Image.new("RGB", (total_width, height_orig))
+
+        # Paste images side by side
+        concat_img.paste(pil_orig_img, (0, 0))
+        concat_img.paste(pil_anomaly_img, (width_orig, 0))
+
+        # Convert back to numpy for wandb
+        concat_array = np.array(concat_img)
+        visualizations.append(concat_array)
+
+    return visualizations
