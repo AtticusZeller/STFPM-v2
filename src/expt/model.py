@@ -191,12 +191,18 @@ class STFPM(pl.LightningModule):
         all_anomaly_maps = torch.cat(
             [output["anomaly_maps"] for output in self.test_step_outputs]
         )
-        
+
         # Collect and denormalize images here instead of in plot_anomaly_map
-        all_images_normalized = torch.cat([output["images"] for output in self.test_step_outputs])
+        all_images_normalized = torch.cat(
+            [output["images"] for output in self.test_step_outputs]
+        )
         # Denormalize images (using ImageNet statistics)
-        mean = torch.tensor([0.485, 0.456, 0.406], device=all_images_normalized.device).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225], device=all_images_normalized.device).view(1, 3, 1, 1)
+        mean = torch.tensor(
+            [0.485, 0.456, 0.406], device=all_images_normalized.device
+        ).view(1, 3, 1, 1)
+        std = torch.tensor(
+            [0.229, 0.224, 0.225], device=all_images_normalized.device
+        ).view(1, 3, 1, 1)
         all_images = all_images_normalized * std + mean
         all_images = torch.clamp(all_images, 0, 1)  # Ensure values are in [0, 1]
         all_anomaly_scores = torch.cat(
@@ -210,16 +216,15 @@ class STFPM(pl.LightningModule):
         self.log("test_image_auroc", image_auroc)
 
         # Plot image-level ROC
-        # self.logger.log_roc_curve(
-        #     all_labels.cpu().numpy(),
-        #     all_anomaly_scores.cpu().numpy(),
-        #     title="ROC Curve",
-        # )
-        # FIXME: number of images is wrong
+        self.logger.log_roc_curve(
+            all_labels.cpu().numpy(),
+            all_anomaly_scores.cpu().numpy(),
+            title="ROC Curve",
+        )
         # Plot sample anomaly maps randomly
         self.logger.log_anomaly_map(
             list(all_anomaly_maps.cpu().numpy()),
-            list(all_images.cpu().numpy()), 
+            list(all_images.cpu().numpy()),
             list(all_labels.cpu().numpy()),
             "Sample Anomaly Maps",
         )

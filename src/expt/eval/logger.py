@@ -181,10 +181,24 @@ class LoggerManager(WandbLogger):
         Ref:
             1. https://wandb.ai/wandb/plots/reports/Plot-ROC-Curves-With-Weights-Biases--VmlldzoyNjk3MDE
         """
+        # Reshape y_pred to have the format expected by wandb
+        # For binary classification, we need probabilities for both classes
+        # If y_pred contains scores rather than probabilities for class 1,
+        # we'll create the implied probability for class 0 as 1-y_pred
+        y_probas = np.zeros((len(y_pred), 2))
+        y_probas[:, 1] = y_pred  # Probability for class 1
+        y_probas[:, 0] = 1 - y_pred  # Probability for class 0
+
         self.experiment.log(
             {
                 title: wandb.plot.roc_curve(
-                    list(y_true), list(y_pred), labels=None, classes_to_plot=None
+                    y_true=y_true,
+                    y_probas=y_probas,
+                    labels=[
+                        "Normal",
+                        "Anomaly",
+                    ],  # Optional: provide human-readable labels
+                    classes_to_plot=None,
                 )
             }
         )
