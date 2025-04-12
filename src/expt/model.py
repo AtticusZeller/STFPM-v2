@@ -64,7 +64,7 @@ class STFPMModel(nn.Module):
             name=backbone, pretrained=True, requires_grad=False
         )
         self.student_model = FeatureExtractor(
-            name=backbone, pretrained=True, requires_grad=True
+            name=backbone, pretrained=False, requires_grad=True
         )
 
     def forward(self, images: torch.Tensor) -> tuple[list[Tensor], list[Tensor]]:
