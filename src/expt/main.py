@@ -9,11 +9,11 @@ from pathlib import Path
 
 import torch
 import typer
-import wandb
 from lightning import Trainer, seed_everything
 from lightning.pytorch.callbacks import RichModelSummary
 from rich.console import Console
 
+import wandb
 from expt.cli import (
     ConfigPath,
     EDAFlag,
@@ -43,7 +43,6 @@ def training(config: Config, fast_dev_run: int = 0) -> str | None:
         run_name=config.logger.run_name,
         entity=config.logger.entity,
         project=config.logger.project,
-        log_model=True,  # enable log model ckpt
         config=config,
     ) as logger:
         # dataset
@@ -146,11 +145,10 @@ def main(
     elif train:
         try:
             run_id = training(config, dev)
+            if run_id and dev == 0:
+                evaluation(config, run_id)
         except Exception:
             console.print_exception(max_frames=1)
-        else:
-            if run_id:
-                evaluation(config, run_id)
     elif eval_id:
         evaluation(config, eval_id)
     elif sweep and sweep_config:

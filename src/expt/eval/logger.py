@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Self
 
 import numpy as np
-import wandb
 import yaml
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
@@ -12,6 +11,7 @@ from rich import print
 from rich.pretty import pprint
 from torch import nn
 
+import wandb
 from expt.config import Config, DataConfig, ModelConfig, OptimizerConfig, TrainingConfig
 from expt.geometry import plot_anomaly_map
 
@@ -20,9 +20,9 @@ class LoggerManager(WandbLogger):
     """
     Initialize the Weights & Biases logging.
     ```bash
-    wandb login --relogin --host=http://server_ip:server_port
+    wandb login --relogin
     ```
-    NOTE: https has bugs on uploading large artifacts
+
     Ref:
         1. https://docs.wandb.ai/ref/python/init/
         2. https://docs.wandb.ai/guides/integrations/lightning/
@@ -36,7 +36,6 @@ class LoggerManager(WandbLogger):
         project: str,
         config: Config,
         id: str | None = None,
-        log_model: bool = True,
         job_type: str = "train",
     ) -> None:
         Path("./logs").mkdir(parents=True, exist_ok=True)
@@ -51,7 +50,6 @@ class LoggerManager(WandbLogger):
             else "never",  # resume run if id is provided
             config=config,
             save_dir="./logs",
-            log_model=log_model,  # log model artifacts while Trainer callbacks
             # offline=True,
         )
         self.entity = entity
@@ -80,8 +78,6 @@ class LoggerManager(WandbLogger):
         # Unwatch all models that were watched
         for model in self._watched_models:
             self.experiment.unwatch(model)
-        if self.job_type == "train" and not self.sweeping:
-            self.upload_best_model()
         # Finish the wandb run
         self.experiment.finish()
         if self.job_type == "train" and not self.sweeping:
@@ -90,16 +86,18 @@ class LoggerManager(WandbLogger):
 
     def load_best_model(self, run_id: str) -> Path:
         """Load the best model from a specific run ID."""
-        model_path = Path(f"./artifacts/{run_id}/model.ckpt")
-        if not model_path.exists():
-            model_dir = self.download_artifact(
-                artifact=f"{self.entity}/{self.name}/model-{run_id}:best",
-                artifact_type="model",
-                use_artifact=True,  # link current run to the artifact
-                save_dir=f"{model_path.parent}",
+        # Use glob to find model checkpoint files that match the pattern
+        model_path_pattern = Path(f"./artifacts/{run_id}").glob("model_*.ckpt")
+        model_paths = list(model_path_pattern)
+        if not len(model_paths) == 1:
+            raise FileNotFoundError(
+                f"Multiple or no model files found for run ID {run_id}."
             )
-            if model_dir is None:
-                raise FileNotFoundError(f"Model-{run_id} not found.")
+        # Get the first matching model path
+        model_path = model_paths[0]
+
+        if not model_path.exists():
+            raise FileNotFoundError(f"checkpoint run_id={run_id} not found.")
         return model_path
 
     def upload_best_model(self) -> None:
@@ -114,16 +112,18 @@ class LoggerManager(WandbLogger):
     def checkpoint_callback(
         self, monitor: str = "val_accuracy", mode: str = "max"
     ) -> ModelCheckpoint:
-        """Return the ModelCheckpoint callback"""
+        """Return the ModelCheckpoint callback
+
+        See Also:
+            - [PyTorch Lightning ModelCheckpoint](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html#lightning.pytorch.callbacks.ModelCheckpoint)
+        """
         return ModelCheckpoint(
             monitor=monitor,
             mode=mode,
             dirpath=self.artifacts_dir,
-            filename="model",
+            filename=f"model_{{epoch:02d}}_{{{monitor}:.2f}}",
             save_top_k=1,
-            save_last=False,
-            auto_insert_metric_name=False,
-            save_on_train_epoch_end=False,
+            auto_insert_metric_name=True,
         )
 
     def watch(

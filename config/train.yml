@@ -8,6 +8,7 @@ logger:
   entity: atticux
   project: STPFM-v2
   run_name: stpfm-glass-insulator-resnet18
+  # run_name: test_run
 model:
   backbone: resnet18
   name: STPFM
