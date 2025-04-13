@@ -33,9 +33,11 @@ from expt.utils import create_rich_progress_bar
 seed_everything(42, workers=True)
 torch.set_float32_matmul_precision("high")
 console = Console()
+# pretty_exceptions_show_locals avoid too much local variables
+app = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-def training(config: Config) -> str | None:
+def training(config: Config, fast_dev_run: int = 0) -> str | None:
     # logger
     with LoggerManager(
         run_name=config.logger.run_name,
@@ -61,6 +63,7 @@ def training(config: Config) -> str | None:
 
         # trainer
         trainer = Trainer(
+            fast_dev_run=fast_dev_run,
             logger=logger,
             # profiler=PyTorchProfiler(),
             callbacks=[
@@ -116,10 +119,12 @@ def evaluation(config: Config, run_id: str) -> None:
         trainer.test(model, datamodule)
 
 
+@app.command()
 def main(
     config_file: ConfigPath = Path("data/train.yml"),
     eda: EDAFlag = False,
     train: TrainFlag = False,
+    dev: int = 0,
     eval_id: EvalFlag = None,
     sweep: SweepFlag = False,
     sweep_config: SweepConfigPath = None,
@@ -140,7 +145,7 @@ def main(
         EDA.analyze_dataset(config)
     elif train:
         try:
-            run_id = training(config)
+            run_id = training(config, dev)
         except Exception:
             console.print_exception(max_frames=1)
         else:
@@ -178,4 +183,4 @@ def main(
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    app()
