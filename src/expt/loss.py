@@ -90,3 +90,113 @@ class STFPMLoss(nn.Module):
             loss = self._compute_layer_loss(layer_t, layer_s)
             layer_losses += loss
         return layer_losses
+
+
+def reduce_tensor_elems(tensor: torch.Tensor, m: int = 2**24) -> torch.Tensor:
+    """Reduce the number of elements in a tensor by random sampling.
+
+    This function flattens an n-dimensional tensor and randomly samples at most ``m``
+    elements from it. This is used to handle the limitation of ``torch.quantile``
+    operation which supports a maximum of 2^24 elements.
+
+    Reference:
+        https://github.com/pytorch/pytorch/blob/b9f81a483a7879cd3709fd26bcec5f1ee33577e6/aten/src/ATen/native/Sorting.cpp#L291
+
+    Args:
+        tensor (torch.Tensor): Input tensor of any shape from which elements will be
+            sampled.
+        m (int, optional): Maximum number of elements to sample. If the flattened
+            tensor has more elements than ``m``, random sampling is performed.
+            Defaults to ``2**24``.
+
+    Returns:
+        torch.Tensor: A flattened tensor containing at most ``m`` elements randomly
+            sampled from the input tensor.
+
+    Example:
+        >>> import torch
+        >>> tensor = torch.randn(1000, 1000)  # 1M elements
+        >>> reduced = reduce_tensor_elems(tensor, m=1000)
+        >>> reduced.shape
+        torch.Size([1000])
+    """
+    tensor = torch.flatten(tensor)
+    if len(tensor) > m:
+        # select a random subset with m elements.
+        perm = torch.randperm(len(tensor), device=tensor.device)
+        idx = perm[:m]
+        tensor = tensor[idx]
+    return tensor
+
+
+class HardFeatureSTFPMLoss(STFPMLoss):
+    """STFPM loss with hard feature mining.
+
+    This loss extends the standard STFPM loss by implementing hard feature mining,
+    which restricts the student's loss to the most challenging parts of an image
+    (where the student mimics the teacher the least).
+    This approach helps the student learn important patterns in normal images
+    while preventing generalization to anomalies.
+
+    The loss computation involves:
+    1. Computing squared differences between teacher and student features
+    2. Selecting elements with the highest differences based on a quantile threshold
+    3. Computing loss only on the selected "hard" elements
+
+    Args:
+        phard (float): Mining factor in range [0,1] that determines the quantile
+            threshold for selecting hard examples. Default is 0.999, which corresponds
+            to using approximately 10% of the values for backpropagation.
+    """
+
+    def __init__(self, phard: float = 0.999) -> None:
+        """Initialize the loss with hard feature mining capability.
+
+        Args:
+            phard (float): Mining factor in range [0,1] that determines the quantile
+                threshold for selecting hard examples. Default is 0.999.
+        """
+        super().__init__()
+        self.phard = phard
+        # We don't need MSELoss from parent class as we'll compute it manually
+        delattr(self, "mse_loss")
+
+    def _compute_layer_loss(
+        self, teacher_feats: torch.Tensor, student_feats: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute loss between teacher and student features with hard mining.
+
+        Instead of using all elements for loss computation, this method:
+        1. L2 normalizes teacher and student features
+        2. Computes squared differences between normalized features
+        3. Selects elements with the highest differences based on phard quantile
+        4. Computes mean loss on selected "hard" elements only
+
+        Args:
+            teacher_feats (torch.Tensor): Features from teacher network with shape
+                `(B, C, H, W)`
+            student_feats (torch.Tensor): Features from student network with shape
+                `(B, C, H, W)`
+
+        Returns:
+            torch.Tensor: Scalar loss value for the layer using hard mining
+        """
+        batch_size, _, height, width = teacher_feats.shape
+
+        # L2 normalize features
+        norm_teacher_features = F.normalize(teacher_feats)
+        norm_student_features = F.normalize(student_feats)
+
+        # Compute squared differences for each element
+        squared_diff = (norm_teacher_features - norm_student_features) ** 2
+
+        # Radom sampling for quantile computation
+        squared_diff_flat = reduce_tensor_elems(squared_diff)
+
+        # Compute the quantile threshold using torch.quantile
+        dhard = torch.quantile(squared_diff_flat, self.phard)
+
+        # Select hard elements and compute mean
+        hard_elements = squared_diff_flat[squared_diff_flat >= dhard]
+
+        return torch.mean(hard_elements)

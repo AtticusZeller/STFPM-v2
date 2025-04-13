@@ -12,7 +12,7 @@ from torchmetrics.classification import BinaryAUROC
 from expt.config import BackBoneT, Config
 from expt.eval.logger import LoggerManager
 from expt.geometry import compute_anomaly_map
-from expt.loss import STFPMLoss
+from expt.loss import HardFeatureSTFPMLoss, STFPMLoss
 
 
 class FeatureExtractor(nn.Module):
@@ -79,7 +79,7 @@ class STFPMModel(nn.Module):
         return self.teacher_model.forward(images), self.student_model.forward(images)
 
 
-class STFPM(pl.LightningModule):
+class STPFM(pl.LightningModule):
     """STFPM LightningModule for anomaly detection\n
     Ref:
         1. https://lightning.ai/docs/pytorch/stable/common/lightning_module.html
@@ -261,12 +261,25 @@ class STFPM(pl.LightningModule):
         return Adam(self.model.student_model.parameters(), lr=self.lr)
 
 
+class STPFMV2(STPFM):
+    def __init__(self, backbone: BackBoneT = "resnet18", lr: float = 1e-3) -> None:
+        super().__init__(backbone=backbone, lr=lr)
+        # models
+        self.criterion = HardFeatureSTFPMLoss()
+
+
 def create_model(config: Config, model_path: Path | None = None) -> pl.LightningModule:
     if config.model.name.lower() == "stpfm":
         return (
-            STFPM(backbone=config.model.backbone, lr=config.optimizer.lr)
+            STPFM(backbone=config.model.backbone, lr=config.optimizer.lr)
             if model_path is None
-            else STFPM.load_from_checkpoint(model_path)
+            else STPFM.load_from_checkpoint(model_path)
+        )
+    elif config.model.name.lower() == "stpfmv2":
+        return (
+            STPFMV2(backbone=config.model.backbone, lr=config.optimizer.lr)
+            if model_path is None
+            else STPFMV2.load_from_checkpoint(model_path)
         )
     else:
         raise ValueError(f"Model name {config.model.name} not supported.")
