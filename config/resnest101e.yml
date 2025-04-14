@@ -3,17 +3,17 @@ data:
   augmentation: null
   batch_size: 32
   dataset: InsPLAD
-  transform: resnet18
+  transform: resnet18_256
 logger:
   entity: atticux
   project: STPFM-v2
-  run_name: stpfmv2-glass-insulator-resnet18
+  run_name: resnest101e-stpfm-glass-insulator
   # run_name: test_run_phard0.9_mean_forward
 model:
-  backbone: resnet18
-  name: STPFMv2
+  backbone: resnest101e
+  name: STPFM
 optimizer:
-  lr: 0.5
+  lr: 0.01
   name: adam
 training:
   max_epochs: 100

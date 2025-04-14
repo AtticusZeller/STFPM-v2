@@ -6,7 +6,9 @@ from typing import Any, Literal
 import yaml
 from rich import print
 
-BackBoneT = Literal["resnet18"]
+BackBoneT = Literal[
+    "resnet18", "wide_resnet101_2", "resnest101e", "gluon_seresnext101_32x4d"
+]
 
 
 @dataclass
@@ -42,7 +44,7 @@ AssetType = Literal[
     "yoke-suspension",  # test/good or test/rust, train/good
 ]
 
-TransformT = Literal["resnet18", "base"]
+TransformT = Literal["resnet18_256", "resnet18", "base"]
 
 
 @dataclass

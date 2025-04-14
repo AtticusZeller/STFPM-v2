@@ -19,6 +19,10 @@ def create_data_module(
             return DataModule(
                 "datasets", asset_type, batch_size, train_transform=resnet18_transform()
             )
+        case "resnet18_256":
+            return DataModule(
+                "datasets", asset_type, batch_size, train_transform=resnet18_transform()
+            )
         case "base":
             return DataModule(
                 "datasets", asset_type, batch_size, train_transform=base_transform()

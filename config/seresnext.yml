@@ -1,0 +1,19 @@
+data:
+  asset_type: glass-insulator
+  augmentation: null
+  batch_size: 32
+  dataset: InsPLAD
+  transform: resnet18
+logger:
+  entity: atticux
+  project: STPFM-v2
+  run_name: gluon_seresnext101_32x4d-stpfm-glass-insulator
+  # run_name: test_run_phard0.9_mean_forward
+model:
+  backbone: gluon_seresnext101_32x4d
+  name: STPFM
+optimizer:
+  lr: 0.01
+  name: adam
+training:
+  max_epochs: 100
