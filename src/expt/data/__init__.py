@@ -1,7 +1,7 @@
 from torchvision.transforms import v2 as v2
 
 from expt.config import AssetType, TransformT
-from expt.data.transform import base_transform, imagenet_transform
+from expt.data.transform import base_transform, resnet18_transform
 
 from .dataset import DataModule
 
@@ -12,12 +12,12 @@ def create_data_module(
     asset_type: AssetType,
     name: str = "InsPLAD",
     batch_size: int = 32,
-    transform: TransformT = "imagenet",
+    transform: TransformT = "resnet18",
 ) -> DataModule:
     match transform:
-        case "imagenet":
+        case "resnet18":
             return DataModule(
-                "datasets", asset_type, batch_size, train_transform=imagenet_transform()
+                "datasets", asset_type, batch_size, train_transform=resnet18_transform()
             )
         case "base":
             return DataModule(

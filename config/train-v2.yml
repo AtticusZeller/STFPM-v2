@@ -3,7 +3,7 @@ data:
   augmentation: null
   batch_size: 32
   dataset: InsPLAD
-  transform: imagenet
+  transform: resnet18
 logger:
   entity: atticux
   project: STPFM-v2

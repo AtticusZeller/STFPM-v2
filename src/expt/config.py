@@ -42,7 +42,7 @@ AssetType = Literal[
     "yoke-suspension",  # test/good or test/rust, train/good
 ]
 
-TransformT = Literal["imagenet", "base"]
+TransformT = Literal["resnet18", "base"]
 
 
 @dataclass
@@ -51,7 +51,7 @@ class DataConfig:
     asset_type: AssetType = "damper-preformed"
     batch_size: int = 4
     augmentation: list[str] | None = None
-    transform: TransformT = "imagenet"
+    transform: TransformT = "resnet18"
 
 
 @dataclass
