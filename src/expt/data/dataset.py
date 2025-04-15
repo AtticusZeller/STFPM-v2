@@ -157,8 +157,8 @@ class DataModule(L.LightningDataModule):
         self.asset_type = asset_type
         self.batch_size = batch_size
         self.train_transform = train_transform
-        self.val_transform = val_transform or train_transform
-        self.test_transform = test_transform or train_transform
+        self.val_transform = val_transform or test_transform
+        self.test_transform = test_transform or val_transform
         self.val_split = val_split
         self.num_workers = num_workers
 

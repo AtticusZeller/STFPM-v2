@@ -11,7 +11,7 @@ logger:
   # run_name: test_run_phard0.9_mean_forward
 model:
   backbone: resnest101e
-  name: STPFM
+  name: STPFMv2
 optimizer:
   lr: 0.01
   name: adam

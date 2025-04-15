@@ -37,7 +37,7 @@ def test_base_transform_pil_input(sample_pil_image: Image.Image) -> None:
 def test_resnet18_transform_pil_input(sample_pil_image: Image.Image) -> None:
     """Test that resnet18_transform handles PIL images correctly."""
     # Arrange
-    transform = resnet18_transform()
+    transform = resnet18_transform(False)
     # Act
     output = transform(sample_pil_image)
 
@@ -54,7 +54,7 @@ def test_resnet18_transform_pil_input(sample_pil_image: Image.Image) -> None:
 def test_resnet18_transform_different_input_sizes(size) -> None:
     """Test that resnet18_transform handles different input sizes correctly."""
     # Arrange
-    transform = resnet18_transform()
+    transform = resnet18_transform(False)
 
     # Create random image with specified size
     array = np.random.randint(0, 224, (size[0], size[1], 3), dtype=np.uint8)
