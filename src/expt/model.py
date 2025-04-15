@@ -12,7 +12,7 @@ from torchmetrics.classification import BinaryAUROC
 from expt.config import BackBoneT, Config
 from expt.eval.logger import LoggerManager
 from expt.geometry import compute_anomaly_map
-from expt.loss import HardFeatureSTFPMLoss, STFPMLoss
+from expt.loss import SimplifiedSTFPMLoss, STFPMLoss
 
 
 class FeatureExtractor(nn.Module):
@@ -265,7 +265,7 @@ class STPFMV2(STPFM):
     def __init__(self, backbone: BackBoneT = "resnet18", lr: float = 1e-3) -> None:
         super().__init__(backbone=backbone, lr=lr)
         # models
-        self.criterion = HardFeatureSTFPMLoss()
+        self.criterion = SimplifiedSTFPMLoss()
 
 
 def create_model(config: Config, model_path: Path | None = None) -> pl.LightningModule:

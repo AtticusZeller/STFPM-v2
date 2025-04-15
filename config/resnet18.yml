@@ -7,11 +7,11 @@ data:
 logger:
   entity: atticux
   project: STPFM-v2
-  run_name: resnet18-stpfm-glass-insulator
+  run_name: resnet18-stpfmv2-glass-insulator
   # run_name: test_run
 model:
   backbone: resnet18
-  name: STPFM
+  name: STPFMv2
 optimizer:
   lr: 0.1
   name: adam
