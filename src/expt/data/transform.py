@@ -23,13 +23,13 @@ def resnet18_transform(train: bool) -> v2.Compose:
     if train:
         augmentation_transforms = [
             # Random rotation
-            v2.RandomRotation(degrees=90),
-            # Slight color jitter to simulate different lighting conditions
-            v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
-            # Random perspective transformation
-            v2.RandomPerspective(distortion_scale=0.2, p=0.5),
-            # Random affine transformations
-            v2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+            v2.RandomRotation(degrees=60)
+            # # Slight color jitter to simulate different lighting conditions
+            # v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+            # # Random perspective transformation
+            # v2.RandomPerspective(distortion_scale=0.2, p=0.5),
+            # # Random affine transformations
+            # v2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         ]
         base_transforms.extend(augmentation_transforms)
 
@@ -53,13 +53,13 @@ def resnet18_256_transform(train: bool) -> v2.Compose:
     if train:
         augmentation_transforms = [
             # Random rotation
-            v2.RandomRotation(degrees=90),
-            # Slight color jitter to simulate different lighting conditions
-            v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
-            # Random perspective transformation
-            v2.RandomPerspective(distortion_scale=0.2, p=0.5),
-            # Random affine transformations
-            v2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+            v2.RandomRotation(degrees=90)
+            # # Slight color jitter to simulate different lighting conditions
+            # v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+            # # Random perspective transformation
+            # v2.RandomPerspective(distortion_scale=0.2, p=0.5),
+            # # Random affine transformations
+            # v2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         ]
         base_transforms.extend(augmentation_transforms)
 

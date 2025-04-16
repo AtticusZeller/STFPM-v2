@@ -6,7 +6,7 @@ data:
   transform: resnet18_256
 logger:
   entity: atticux
-  project: STPFM-v2
+  project: STPFM-InsPLAD
   run_name: wide_resnet101_2-stpfm-glass-insulator
   # run_name: test_run_phard0.9_mean_forward
 model:
